@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>chess (multiplayer soon!!)</title>
+<style>
+  body{font-family:sans-serif;display:flex;flex-direction:column;align-items:center;background:#f4f4f4;margin:0;padding:0}
+  h1{text-transform:lowercase;margin-top:20px}
+  #main{display:flex;gap:32px;align-items:flex-start;margin:20px}
+  #chess-container{display:flex;flex-direction:column;align-items:center}
+  #board{display:grid;grid-template-columns:repeat(8,66px);grid-template-rows:repeat(8,66px);border:2px solid #222}
+  .cell{width:66px;height:66px;display:flex;align-items:center;justify-content:center;font-size:40px;cursor:pointer;user-select:none}
+  .white{background:#f0d9b5}
+  .black{background:#b58863;color:#111}
+  .highlight{background:yellow!important}
+  #status{text-transform:lowercase;margin-top:8px;font-weight:700}
+  #move-log{width:220px;background:#fff;border:1px solid #bbb;padding:10px;overflow:auto;height:540px;text-transform:lowercase}
+  #move-log h3{text-align:center;margin:0 0 8px 0}
+  #moves-list{padding-left:18px;margin:0}
+  .controls{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  button.small{padding:6px 8px;border-radius:6px;border:1px solid #333;cursor:pointer;text-transform:lowercase;background:#fff}
+  #copy-note{font-size:13px;color:#333;margin-top:6px;text-transform:lowercase}
+  #how-to{max-width:760px;background:#fff;border:1px solid #ccc;padding:18px;border-radius:10px;margin:20px;text-align:left}
+  #how-to h2{text-transform:lowercase;margin-top:0}
+</style>
+</head>
+<body>
+<h1>chess (multiplayer soon!!)</h1>
+
+<div id="main">
+  <div id="chess-container">
+    <div id="board" aria-label="chess board"></div>
+    <div id="status">white to move</div>
+    <button id="reset" class="small" style="margin-top:10px">restart</button>
+  </div>
+
+  <div id="move-log">
+    <h3>moves</h3>
+    <ol id="moves-list"></ol>
+
+    <div class="controls">
+      <button id="copy-pgn" class="small">copy pgn</button>
+      <button id="copy-fen" class="small">copy fen</button>
+      <div id="copy-note"></div>
+    </div>
+  </div>
+</div>
+
+<div id="how-to">
+  <h2>how to play</h2>
+  <p>
+    chess is played with white moving first. click a piece, then click its destination.<br><br>
+    this version includes full rules: castling, en passant, pawn promotion, check, checkmate, and stalemate.<br><br>
+    the move log shows standard algebraic notation. use "copy pgn" to copy the whole game pgn (paste it into lichess or chess.com analysis). use "copy fen" to copy the current position fen (paste it into a position editor).<br><br>
+    press "restart" to begin a new game.
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0/dist/chess.min.js"></script>
+<script>
+/* chess with move log + copy pgn/fen - lowercase ui */
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const movesList = document.getElementById('moves-list');
+const copyPgnBtn = document.getElementById('copy-pgn');
+const copyFenBtn = document.getElementById('copy-fen');
+const copyNote = document.getElementById('copy-note');
+const resetBtn = document.getElementById('reset');
+
+let game = new Chess();
+let selected = null;
+
+function renderBoard(){
+  boardEl.innerHTML = '';
+  const squares = game.board();
+  // board.js uses 0 = rank 8 top; we want to render rank8 -> rank1 top-to-bottom
+  for(let r=7;r>=0;r--){
+    for(let c=0;c<8;c++){
+      const piece = squares[r][c];
+      const cell = document.createElement('div');
+      cell.className = 'cell ' + ((r+c)%2 ? 'black':'white');
+      cell.dataset.square = 'abcdefgh'[c] + (r+1);
+      cell.textContent = piece ? piece.unicode : '';
+      cell.onclick = () => onSquareClick(cell.dataset.square);
+      boardEl.appendChild(cell);
+    }
+  }
+  updateStatus();
+  highlightSelected();
+}
+
+function onSquareClick(square){
+  if(selected){
+    // try move
+    const move = game.move({from:selected,to:square,promotion:'q'});
+    if(move){
+      addMoveToLog(move.san);
+      selected = null;
+      renderBoard();
+      checkEnd();
+    } else {
+      selected = null;
+      renderBoard();
+    }
+  } else {
+    const p = game.get(square);
+    if(p && p.color === game.turn()){
+      selected = square;
+      highlightSelected();
+    }
+  }
+}
+
+function highlightSelected(){
+  document.querySelectorAll('.cell').forEach(el=>el.classList.remove('highlight'));
+  if(selected){
+    const el = document.querySelector(`[data-square="${selected}"]`);
+    if(el) el.classList.add('highlight');
+  }
+}
+
+function addMoveToLog(san){
+  const li = document.createElement('li');
+  li.textContent = san;
+  movesList.appendChild(li);
+  movesList.parentElement.querySelector('#moves-list').scrollTop = movesList.parentElement.querySelector('#moves-list').scrollHeight;
+}
+
+function updateStatus(){
+  if(game.isCheckmate()){
+    statusEl.textContent = `checkmate! winner: ${game.turn() === 'w' ? 'black':'white'}`;
+  } else if(game.isDraw()){
+    statusEl.textContent = 'draw!';
+  } else {
+    statusEl.textContent = `${game.turn() === 'w' ? 'white':'black'} to move`;
+  }
+}
+
+function checkEnd(){
+  // update status already done in renderBoard
+  // optionally we could show more alerts; keep minimal
+}
+
+resetBtn.addEventListener('click', ()=>{
+  game = new Chess();
+  selected = null;
+  movesList.innerHTML = '';
+  copyNote.textContent = '';
+  renderBoard();
+});
+
+// copy pgn
+copyPgnBtn.addEventListener('click', async ()=>{
+  // build pgn with headers (optional). chess.js returns pgn moves string
+  let pgn = game.pgn({max_width:0});
+  // if empty, give initial header & blank moves
+  if(!pgn) pgn = '';
+  try{
+    await navigator.clipboard.writeText(pgn);
+    copyNote.textContent = 'pgn copied to clipboard';
+    setTimeout(()=>copyNote.textContent = '',1800);
+  }catch(e){
+    copyNote.textContent = 'unable to copy (clipboard blocked)';
+    setTimeout(()=>copyNote.textContent = '',2000);
+  }
+});
+
+// copy fen
+copyFenBtn.addEventListener('click', async ()=>{
+  const fen = game.fen();
+  try{
+    await navigator.clipboard.writeText(fen);
+    copyNote.textContent = 'fen copied to clipboard';
+    setTimeout(()=>copyNote.textContent = '',1800);
+  }catch(e){
+    copyNote.textContent = 'unable to copy (clipboard blocked)';
+    setTimeout(()=>copyNote.textContent = '',2000);
+  }
+});
+
+// maintain move log when moves happen programmatically (e.g., promotion default q)
+(function observeMoves(){
+  // patch game.move to also add to move log when used in our UI flows
+  const origMove = game.move.bind(game);
+  game.move = function(obj){
+    const res = origMove(obj);
+    return res;
+  };
+})();
+
+renderBoard();
+</script>
+</body>
+</html>
